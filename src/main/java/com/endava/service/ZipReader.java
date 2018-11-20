@@ -1,4 +1,4 @@
-package launch.service;
+package com.endava.service;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -8,7 +8,7 @@ import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
-import launch.domain.File;
+import com.endava.domain.File;
 
 public class ZipReader {
 

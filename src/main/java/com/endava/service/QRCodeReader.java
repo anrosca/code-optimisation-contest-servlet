@@ -1,4 +1,4 @@
-package launch.service;
+package com.endava.service;
 
 import java.awt.image.BufferedImage;
 import java.io.IOException;

@@ -1,0 +1,1 @@
+web: java $JAVA_OPTS -server -Xmx450m -Xms450M -Xss1M -jar target/dependency/webapp-runner.jar --port $PORT target/*.war

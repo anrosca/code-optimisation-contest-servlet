@@ -1,52 +1,51 @@
-package launch.service;
+package com.endava.service;
 
 import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 
-import launch.domain.BestBuy;
-import launch.domain.File;
+import com.endava.domain.BestBuy;
+import com.endava.domain.File;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 public class TradingFacade implements Consumer<File> {
 
-    private final AtomicLong taskIdGenerator = new AtomicLong();
+    private final InputStream zipArchive;
+
+    private int taskIdGenerator = 0;
 
     private final BlockingQueue<BestBuyCalculateTask> submittedTasksQueue = new LinkedBlockingQueue<>();
 
-    private final ZipReader zipReader;
+    private final ZipReader zipReader = new ZipReader();
 
-    private volatile boolean isDone = false;
+    private boolean isDone = false;
 
-    public TradingFacade() {
-        this.zipReader = new ZipReader();
+    public TradingFacade(final InputStream zipArchive) {
+        this.zipArchive = zipArchive;
     }
 
-    public String getBestBuysFor(InputStream zipArchive) {
+    public String getBestBuys() {
         zipReader.registerConsumer(this);
         zipReader.readZipArchive(zipArchive);
-        List<BestBuyCalculateTask> finishedTasks = spinUntilAllTasksAreDone();
-        finishedTasks.sort(Comparator.comparingLong(bestBuyCalculateTask -> bestBuyCalculateTask.id));
+        BestBuyCalculateTask[] finishedTasks = spinUntilAllTasksAreDone();
         return makeBestBuysResponse(finishedTasks);
     }
 
-    private List<BestBuyCalculateTask> spinUntilAllTasksAreDone() {
+    private BestBuyCalculateTask[] spinUntilAllTasksAreDone() {
         while (!isDone) {
             Thread.yield();
         }
-        int totalTasks = (int) taskIdGenerator.get();
-        List<BestBuyCalculateTask> finishedTasks = new ArrayList<>(totalTasks);
+        int totalTasks = taskIdGenerator;
+        BestBuyCalculateTask[] finishedTasks = new BestBuyCalculateTask[totalTasks];
+        int finishedTasksIndex = 0;
         for (int i = 0; i < totalTasks; ++i) {
             BestBuyCalculateTask queueElement = getQueueElement();
-            if (queueElement != null)
-                finishedTasks.add(queueElement);
+            if (queueElement != null) {
+                finishedTasks[finishedTasksIndex++] = queueElement;
+            }
         }
         return finishedTasks;
     }
@@ -59,8 +58,7 @@ public class TradingFacade implements Consumer<File> {
         }
     }
 
-    private String makeBestBuysResponse(final List<BestBuyCalculateTask> results) {
-        StringBuilder jsonResult = new StringBuilder();
+    private String makeBestBuysResponse(final BestBuyCalculateTask[] results) {
         ObjectNode objectNode = JsonNodeFactory.instance.objectNode();
         for (BestBuyCalculateTask task : results) {
             BestBuy bestBuy = task.getResult();
@@ -70,8 +68,7 @@ public class TradingFacade implements Consumer<File> {
                         .put("sellPoint", bestBuy.getSellPoint().toString()));
             }
         }
-        jsonResult.append(objectNode.toString());
-        return jsonResult.toString();
+        return objectNode.toString();
     }
 
     @Override
@@ -79,8 +76,8 @@ public class TradingFacade implements Consumer<File> {
         if (file == null) {
             isDone = true;
         } else {
-            ForkJoinPool forkJoinPool = new ForkJoinPool(Runtime.getRuntime().availableProcessors());
-            forkJoinPool.submit(new BestBuyCalculateTask(taskIdGenerator.incrementAndGet(), file));
+            ForkJoinPool forkJoinPool = ForkJoinPool.commonPool();
+            forkJoinPool.submit(new BestBuyCalculateTask(++taskIdGenerator, file));
         }
     }
 
@@ -119,16 +116,23 @@ public class TradingFacade implements Consumer<File> {
                 tryProcessImageFile(file);
             } catch (Exception e) {
                 //skipping file
+                result = null;
+                submittedTasksQueue.add(this);
             }
         }
 
         private void tryProcessImageFile(final File file) {
             String imageContent = QRCodeReader.decodeQRCode(file.getContentStream());
-            double[] stocksPrices = StockParser.getStocks(imageContent);
-            if (stocksPrices.length != 0) {
-                result = BestBuyCalculator.calculateBestBuy(stocksPrices, file.getFileName());
-                submittedTasksQueue.add(this);
+            if (!imageContent.isEmpty()) {
+                double[] stocksPrices = StockParser.getStocks(imageContent);
+                if (stocksPrices.length != 0) {
+                    result = BestBuyCalculator.calculateBestBuy(stocksPrices, file.getFileName());
+                    submittedTasksQueue.add(this);
+                    return;
+                }
             }
+            result = null;
+            submittedTasksQueue.add(this);
         }
     }
 }

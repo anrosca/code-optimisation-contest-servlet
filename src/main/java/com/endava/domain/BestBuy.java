@@ -1,4 +1,4 @@
-package launch.domain;
+package com.endava.domain;
 
 import java.util.Objects;
 

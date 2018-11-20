@@ -1,7 +1,6 @@
-package launch.service;
+package com.endava.service;
 
-import launch.domain.BestBuy;
-
+import com.endava.domain.BestBuy;
 
 public class BestBuyCalculator {
 
